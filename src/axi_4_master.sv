@@ -105,8 +105,11 @@ module axi_4_master(
     logic  [2:0]       effective_axsize;
 
     // Select source based on normal or retry burst
-    logic [`DATA_BUS_WIDTH-1:0] curr_data;
-    logic [STROBE_WIDTH-1:0]    curr_strobe;
+    logic [`DATA_BUS_WIDTH-1:0]             curr_data;
+    logic [STROBE_WIDTH-1:0]                curr_strobe;
+    logic [`DATA_BUS_WIDTH*BURST_MAX-1:0]   src_data;
+    logic [STROBE_WIDTH*BURST_MAX-1:0]      src_strobe;
+    logic [`XLEN-1:0]                       offset;
 
     // AXI 4  ID NUMBER 
     logic  [3:0]       id_counter;
@@ -280,22 +283,48 @@ always_ff @(posedge clk or negedge reset) begin
         // 2. Prepare curr_data and curr_strobe using NEXT value
         // =========================================
 
-        curr_data   = '0; 
+        curr_data   = '0;
         curr_strobe = '0;
 
-        for (int i = 0; i < `DATA_BUS_WIDTH; i = i + 1) begin
-            if ((i >= (next_burst_wr_counter * (8*(1 << effective_axsize)))) && 
-                i <  ((next_burst_wr_counter + 1) * (8*(1 << effective_axsize)))) begin
-                curr_data[i] = resend_wr_burst ? last_burst_wdata[i] : vlsu_wdata[i];
-            end
-        end
+        src_data   = resend_wr_burst ? last_burst_wdata : vlsu_wdata;
+        src_strobe = resend_wr_burst ? last_burst_write_strobe : write_strobe;
+        offset     = next_burst_wr_counter << effective_axsize;  // offset in bytes
 
-        for (int i = 0; i < STROBE_WIDTH; i = i + 1) begin
-            if (i >= (next_burst_wr_counter * (1 << effective_axsize)) &&
-                i <  ((next_burst_wr_counter + 1) * (1 << effective_axsize))) begin
-                curr_strobe[i] = resend_wr_burst ? last_burst_write_strobe[i] : write_strobe[i];
+        case (effective_axsize)
+            3'd0: begin // 1 byte
+                curr_data[7:0]   = src_data[offset*8 +: 8];
+                curr_strobe[0]   = src_strobe[offset];
             end
-        end
+            3'd1: begin // 2 bytes
+                curr_data[15:0]  = src_data[offset*8 +: 16];
+                curr_strobe[1:0] = src_strobe[offset +: 2];
+            end
+            3'd2: begin // 4 bytes
+                curr_data[31:0]  = src_data[offset*8 +: 32];
+                curr_strobe[3:0] = src_strobe[offset +: 4];
+            end
+            3'd3: begin // 8 bytes
+                curr_data[63:0]  = src_data[offset*8 +: 64];
+                curr_strobe[7:0] = src_strobe[offset +: 8];
+            end
+            3'd4: begin // 16 bytes
+                curr_data[127:0]  = src_data[offset*8 +: 128];
+                curr_strobe[15:0] = src_strobe[offset +: 16];
+            end
+            3'd5: begin // 32 bytes
+                curr_data[255:0]  = src_data[offset*8 +: 256];
+                curr_strobe[31:0] = src_strobe[offset +: 32];
+            end
+            3'd6: begin // 64 bytes
+                curr_data[511:0]  = src_data[offset*8 +: 512];
+                curr_strobe[63:0] = src_strobe[offset +: 64];
+            end
+            default: begin
+                curr_data   = '0;
+                curr_strobe = '0;
+            end
+        endcase
+
 
         // =========================================
         // 3. Write prepared data
