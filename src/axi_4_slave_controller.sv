@@ -286,6 +286,7 @@ always_comb begin
             s_wready        = 0;
             s_bvalid        = 0;
             incre_counter   = 0;
+            store_data      = 0;
         end
     endcase
 end

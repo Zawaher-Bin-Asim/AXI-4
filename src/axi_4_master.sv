@@ -180,14 +180,15 @@ module axi_4_master(
     end
 
     // Combined Retry signal assignments
-    assign resend_burst     = retry_req    && !ld_req;
-    assign resend_wr_burst  = retry_wr_req && !st_req;
+    assign resend_burst     = retry_req    && !ld_req && !burst_valid_data;
+    assign resend_wr_burst  = retry_wr_req && !st_req && !burst_wr_valid;
 
     always_ff @(posedge clk or negedge reset) begin
         if (!reset) begin
             ld_req_reg                  <= 0;
             st_req_reg                  <= 0;
             re_wr_addr_channel.arid     <= 0;
+            re_wr_addr_channel.awid     <= 0;
             re_wr_addr_channel.axaddr   <= 0;
             re_wr_addr_channel.axlen    <= 0;
             re_wr_addr_channel.axsize   <= 0;
@@ -227,6 +228,13 @@ module axi_4_master(
                 re_wr_addr_channel.axprot   <= 3'b000;
                 re_wr_addr_channel.axqos    <= 4'b0000;
             end
+            else if (wr_data_channel.wlast && s_bvalid && m_bready)begin
+                st_req_reg <= 0;
+            end
+            else if (re_data_channel.rlast && s_rvalid && m_rready)begin
+                ld_req_reg <= 0;
+            end
+            
         end
     end
 

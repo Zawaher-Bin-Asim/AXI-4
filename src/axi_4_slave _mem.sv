@@ -88,7 +88,7 @@ module axi4_slave_mem(
     logic   [STROBE_WIDTH-1:0]      write_strobe;
     logic                           wlast;
     logic   [7:0]                   burst_len;        // Burst Length . Number of burst transfers
-    logic   [2:0]                   burst_size;       // Burst Size . Number of bytes to be transfered in each burst 
+    logic   [5:0]                   burst_size;       // Burst Size . Number of bytes to be transfered in each burst 
     logic   [1:0]                   burst_type;       // Burst type
     logic                           atomic_access;    // Atomic Access
     logic   [3:0]                   mem_type;         // memory type
@@ -97,7 +97,6 @@ module axi4_slave_mem(
 
     // BURST CONTROL SIGNALS
     logic   [`XLEN-1:0]             current_addr;     // The current address that is to be assigned to read_mem_addr
-    logic   [`XLEN-1:0]             next_addr;        // The next address that is going to be the current address in the next cycle 
     logic   [`XLEN-1:0]             wrap_boundary;    // Wrap boundry for the wrap burst type
     logic                           burst_active;     // Tells the burst is in progress or the memory read operation is in progress
     logic   [7:0]                   burst_counter;    // Counter to keep the check of the number of burst transfers
@@ -239,7 +238,7 @@ module axi4_slave_mem(
 
     // Address validity check and write id check
     always_comb begin
-        addr_valid = ((current_addr + burst_size - 1) < `MEM_DEPTH);
+        addr_valid = ((current_addr + burst_size ) < `MEM_DEPTH);
         wr_id_mismatch = (write_addr_id != write_data_id);
     end
 
@@ -257,7 +256,6 @@ module axi4_slave_mem(
         if (!reset) begin
             burst_counter <= 0;
             current_addr  <= 0;
-            next_addr     <= 0;
             burst_active  <= 0;
         end
         else begin
@@ -268,7 +266,6 @@ module axi4_slave_mem(
                 if ((m_arvalid && s_arready) && !burst_active) begin
                     burst_counter <= 0;
                     current_addr  <= re_wr_addr_channel.axaddr;
-                    next_addr     <= re_wr_addr_channel.axaddr;
                     burst_active  <= 1;
                 end 
                 else if (burst_active) begin
@@ -276,18 +273,16 @@ module axi4_slave_mem(
                         if (incre_counter ) begin
                             case (burst_type)
                                 BURST_FIXED: begin
-                                    current_addr <= next_addr;
+                                    current_addr <= current_addr;
                                 end
                                 BURST_INCR: begin
-                                    current_addr <= next_addr;
-                                    next_addr    <= current_addr + burst_size;
+                                    current_addr    <= current_addr + burst_size;
                                 end
                                 BURST_WRAP: begin
-                                    current_addr <= next_addr;
                                     if ((current_addr + burst_size) >= (wrap_boundary + (burst_size * burst_len))) begin
-                                        next_addr <= wrap_boundary;
+                                        current_addr <= wrap_boundary;
                                     end else begin
-                                        next_addr <= current_addr + burst_size;
+                                        current_addr <= current_addr + burst_size;
                                     end
                                 end
                                 default: current_addr <= 'h0;
@@ -315,27 +310,24 @@ module axi4_slave_mem(
                     // Start of burst
                     burst_counter <= 0;
                     current_addr  <= re_wr_addr_channel.axaddr;
-                    next_addr     <= re_wr_addr_channel.axaddr;
                     burst_active  <= 1;
                 end 
                 else if (burst_active) begin
-                    if (!(wr_data_channel.wlast && burst_counter == 0)) begin
+                    if (!(wlast && burst_counter == 0)) begin
                         // Skip address generation if this is the only transaction (first is wlast)
                         if (incre_counter) begin
                             case (burst_type)
                                 BURST_FIXED: begin
-                                    current_addr <= next_addr;
+                                    current_addr <= current_addr;
                                 end
                                 BURST_INCR: begin
-                                    current_addr <= next_addr;
-                                    next_addr    <= current_addr + burst_size;
+                                    current_addr <= current_addr + burst_size;
                                 end
                                 BURST_WRAP: begin
-                                    current_addr <= next_addr;
                                     if ((current_addr + burst_size) >= (wrap_boundary + (burst_size * burst_len))) begin
-                                        next_addr <= wrap_boundary;
+                                        current_addr <= wrap_boundary;
                                     end else begin
-                                        next_addr <= current_addr + burst_size;
+                                        current_addr <= current_addr + burst_size;
                                     end
                                 end
                                 default: current_addr <= 'h0;
@@ -405,11 +397,12 @@ module axi4_slave_mem(
         if (!reset) begin
             data_stored <= 0;
             write_err   <= 0;
+           // memory      <= 0;
         end
         else begin
             if (store_data) begin
                 if (addr_valid && !wr_id_mismatch) begin
-                    for (int i = 0; i < burst_size; i++) begin
+                    for (int i = 0; i < STROBE_WIDTH; i++) begin
                         if (write_strobe[i]) begin
                             memory[current_addr + i] <= wr_data[8*i +: 8];
                         end
@@ -439,27 +432,29 @@ module axi4_slave_mem(
     //                          AXI-4  WRITE RESPONSE CHANNEL                   //
     //==========================================================================//
 
-    always_ff @(posedge clk or negedge reset)begin 
-        if (!reset)begin
-            wr_resp_channel.bid <= 0;
-            wr_resp_channel.bresp <= RESP_OKAY;
+    always_comb begin 
+            
+        wr_resp_channel.bid = 0;
+        wr_resp_channel.bresp = RESP_OKAY;
+
+        if (wlast_done )begin
+            wr_resp_channel.bid = write_addr_id;
+            // Response CASE 
+            case (write_err)
+            1'b1 : begin
+                wr_resp_channel.bresp = RESP_DECERR;
+            end 
+            1'b0 : begin
+                wr_resp_channel.bresp = RESP_OKAY;
+            end
+            default : begin
+                wr_resp_channel.bresp = RESP_DECERR;
+            end 
+            endcase   
         end
         else begin
-            if (wlast_done )begin
-                wr_resp_channel.bid <= write_addr_id;
-                // Response CASE 
-                case (write_err)
-                1'b1 : begin
-                    wr_resp_channel.bresp <= RESP_DECERR;
-                end 
-                1'b0 : begin
-                    wr_resp_channel.bresp <= RESP_OKAY;
-                end
-                default : begin
-                    wr_resp_channel.bresp <= RESP_DECERR;
-                end 
-                endcase   
-            end
+            wr_resp_channel.bid = wr_resp_channel.bid;
+            wr_resp_channel.bresp = wr_resp_channel.bresp;
         end
     end
 endmodule
