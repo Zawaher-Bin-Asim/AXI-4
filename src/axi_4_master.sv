@@ -386,6 +386,7 @@ end
 
                     if (re_data_channel.rlast) begin
                         burst_active    <= 0;
+                        burst_index     <= 0;
 
                         if (burst_read_err)begin
                             retry_req <= 1;

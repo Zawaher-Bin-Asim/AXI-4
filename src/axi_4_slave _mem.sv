@@ -355,39 +355,37 @@ module axi4_slave_mem(
     // and the current address are the register value and will not be incremented  
     // if m_rready is not 1 
     // The burst active also depends upon the rlast signal so it will also maintain value
-    always_ff @(posedge clk or negedge reset)begin
-        if (!reset)begin
-            re_data_channel.rid   <= 0;
-            re_data_channel.rlast <= 0;
-            re_data_channel.rdata <= 0;
-            re_data_channel.rresp <= RESP_OKAY;
-            data_fetched          <= 0;
-        end
-        else begin 
-            if (ld_req && burst_active )begin
-                re_data_channel.rid   <= read_addr_id;
-                re_data_channel.rlast <= (burst_counter == burst_len - 1);
-                data_fetched          <= 1;
+    always_comb begin
+    
+        re_data_channel.rid   = 0;
+        re_data_channel.rlast = 0;
+        re_data_channel.rdata = 0;
+        re_data_channel.rresp = RESP_OKAY;
+        data_fetched          = 0;
+        
+        if (ld_req && burst_active )begin
+            re_data_channel.rid   = read_addr_id;
+            re_data_channel.rlast = (burst_counter == burst_len - 1);
+            data_fetched          = 1;
 
-                // Response CASE 
-                case (addr_valid)
-                1'b1 : begin
-                        for (int i = 0; i < burst_size; i++) begin
-                            re_data_channel.rdata[i*8 +: 8] <= memory[current_addr + i];
-                        end
-                        re_data_channel.rresp <= RESP_OKAY;
-                end 
-                1'b0 : begin
-                        re_data_channel.rdata <= 0;
-                        re_data_channel.rresp <= RESP_DECERR;
-                end
-                default : begin
-                        re_data_channel.rdata <= 0;
-                        re_data_channel.rresp <= RESP_DECERR;
-                end 
-                endcase
+            // Response CASE 
+            case (addr_valid)
+            1'b1 : begin
+                    for (int i = 0; i < burst_size; i++) begin
+                        re_data_channel.rdata[i*8 +: 8] = memory[current_addr + i];
+                    end
+                    re_data_channel.rresp = RESP_OKAY;
+            end 
+            1'b0 : begin
+                    re_data_channel.rdata = 0;
+                    re_data_channel.rresp = RESP_DECERR;
             end
-        end
+            default : begin
+                    re_data_channel.rdata = 0;
+                    re_data_channel.rresp = RESP_DECERR;
+            end 
+            endcase
+        end  
     end
 
     //==========================================================================//
