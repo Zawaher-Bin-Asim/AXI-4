@@ -104,7 +104,7 @@ module axi_4_tb;
         st_req = 0;
 
         // Wait some cycles before read
-        repeat(30) @(posedge clk);
+        repeat(15) @(posedge clk);
 
         // Start Read Transaction
         ld_req = 1;
